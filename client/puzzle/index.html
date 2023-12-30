@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <link rel="stylesheet" href="examples/styles/examples.css" />
+        <link rel="stylesheet" href="../assets/chessboard.css" />
+        <link
+            rel="stylesheet"
+            href="../assets/extensions/markers/markers.css"
+        />
+        <link
+            rel="stylesheet"
+            href="../assets/extensions/promotion-dialog/promotion-dialog.css"
+        />
+
+        <title>Antichess puzzles</title>
+    </head>
+    <body>
+        <div class="board" id="board"></div>
+
+        <script src="/global/url_tools.js"></script>
+        <script type="module">
+            import {
+                INPUT_EVENT_TYPE,
+                COLOR,
+                Chessboard,
+                BORDER_TYPE,
+            } from "/src/Chessboard.js";
+            import {
+                MARKER_TYPE,
+                Markers,
+            } from "/src/extensions/markers/Markers.js";
+            import {
+                PROMOTION_DIALOG_RESULT_TYPE,
+                PromotionDialog,
+            } from "/src/extensions/promotion-dialog/PromotionDialog.js";
+            import { Accessibility } from "/src/extensions/accessibility/Accessibility.js";
+
+            import { Chess } from "/global/Chess.js";
+
+            var availableMoves = [];
+
+            var chess = new Chess();
+
+            const buildBoard = (data) => {
+                chess = new Chess(data.fen);
+
+                document.getElementById("board").innerHTML = "";
+                const board = new Chessboard(document.getElementById("board"), {
+                    position: chess.fen(),
+                    assetsUrl: "/assets/",
+                    style: {
+                        borderType: BORDER_TYPE.none,
+                        pieces: { file: "pieces/staunty.svg" },
+                        animationDuration: 150,
+                    },
+                    orientation: data.fen.includes("w")
+                        ? COLOR.white
+                        : COLOR.black,
+                    extensions: [
+                        {
+                            class: Markers,
+                            props: {
+                                autoMarkers: MARKER_TYPE.square,
+                            },
+                        },
+                        { class: PromotionDialog },
+                    ],
+                });
+
+                board.enableMoveInput(
+                    inputHandler,
+                    data.fen.includes("w") ? COLOR.white : COLOR.black
+                );
+            };
+
+            const inputHandler = (event) => {
+                if (event.type === INPUT_EVENT_TYPE.movingOverSquare) {
+                    return; // ignore this event
+                }
+
+                if (event.type !== INPUT_EVENT_TYPE.moveInputFinished) {
+                    event.chessboard.removeMarkers(MARKER_TYPE.dot);
+                    event.chessboard.removeMarkers(MARKER_TYPE.bevel);
+                }
+
+                if (event.type === INPUT_EVENT_TYPE.moveInputStarted) {
+                    for (let i in availableMoves) {
+                        var move = availableMoves[i];
+
+                        if (move.substring(0, 2) === event.squareFrom) {
+                            const to = move.substring(2, 4);
+
+                            if (event.chessboard.getPiece(to)) {
+                                event.chessboard.addMarker(
+                                    MARKER_TYPE.bevel,
+                                    to
+                                );
+                            } else {
+                                event.chessboard.addMarker(MARKER_TYPE.dot, to);
+                            }
+                        }
+                    }
+
+                    return true;
+                } else if (event.type === INPUT_EVENT_TYPE.validateMoveInput) {
+                    /*const move = {
+                        from: event.squareFrom,
+                        to: event.squareTo,
+                        promotion:
+                            event.piece[1] === "p" &&
+                            ((event.squareTo[1] === "1" &&
+                                event.squareFrom[1] === "2") ||
+                                (event.squareTo[1] === "8" &&
+                                    event.squareFrom[1] === "7")),
+                    };*/
+
+                    //console.log(event, move);
+
+                    const move = {
+                        from: event.squareFrom,
+                        to: event.squareTo,
+                        promotion: event.promotion,
+                    };
+                    const result = chess.move(move)
+
+                    console.log(result)
+
+                    if (move.promotion) {
+                        event.chessboard.showPromotionDialog(
+                            event.squareTo,
+                            COLOR.white,
+                            (result) => {
+                                console.log("promotion result", result);
+                                if (
+                                    result.type ===
+                                    PROMOTION_DIALOG_RESULT_TYPE.pieceSelected
+                                ) {
+                                    chess.move({
+                                        from: event.squareFrom,
+                                        to: event.squareTo,
+                                        promotion: result.piece.charAt(1),
+                                    });
+                                    event.chessboard.setPosition(
+                                        chess.fen(),
+                                        true
+                                    );
+                                    makeEngineMove(event.chessboard);
+                                } else {
+                                    event.chessboard.enableMoveInput(
+                                        inputHandler,
+                                        COLOR.white
+                                    );
+                                    event.chessboard.setPosition(
+                                        chess.fen(),
+                                        true
+                                    );
+                                }
+                            }
+                        );
+                    } else {
+                        fetch(`/api/v1.0/puzzle?id=${puzzleId}&moves=`).then(
+                            (res) =>
+                                res.json().then((data) => {
+                                    if (data.error) return;
+
+                                    availableMoves = data.moves;
+
+                                    buildBoard(data);
+                                })
+                        );
+                    }
+                }
+            };
+
+            if (puzzleId)
+                fetch(`/api/v1.0/puzzle?id=${puzzleId}`).then((res) =>
+                    res.json().then((data) => {
+                        if (data.error) return;
+
+                        availableMoves = data.moves;
+
+                        buildBoard(data);
+                    })
+                );
+        </script>
+    </body>
+</html>
